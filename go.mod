@@ -1,4 +1,4 @@
-module github.com/hueristiq/hq-go-limiter
+module github.com/hueristiq/hq-lib-limiter-go
 
 go 1.26.3
 

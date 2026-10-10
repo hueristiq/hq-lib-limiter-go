@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	hqgolimiter "github.com/hueristiq/hq-go-limiter"
+	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
 )
 
 // sinkAllowed and sinkDelay keep serial benchmark results alive; sinkAtomic does the same

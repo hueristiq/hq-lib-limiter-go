@@ -1,8 +1,8 @@
-# hq-go-limiter
+# hq-lib-limiter-go
 
-![made with go](https://img.shields.io/badge/made%20with-Go-1E90FF.svg) [![go reference](https://pkg.go.dev/badge/github.com/hueristiq/hq-go-limiter.svg)](https://pkg.go.dev/github.com/hueristiq/hq-go-limiter) [![license](https://img.shields.io/badge/license-MIT-gray.svg?color=1E90FF)](https://github.com/hueristiq/hq-go-limiter/blob/main/LICENSE) ![maintenance](https://img.shields.io/badge/maintained%3F-yes-1E90FF.svg) [![open issues](https://img.shields.io/github/issues-raw/hueristiq/hq-go-limiter.svg?style=flat&color=1E90FF)](https://github.com/hueristiq/hq-go-limiter/issues?q=is:issue+is:open) [![closed issues](https://img.shields.io/github/issues-closed-raw/hueristiq/hq-go-limiter.svg?style=flat&color=1E90FF)](https://github.com/hueristiq/hq-go-limiter/issues?q=is:issue+is:closed) [![contribution](https://img.shields.io/badge/contributions-welcome-1E90FF.svg)](https://github.com/hueristiq/hq-go-limiter/blob/main/CONTRIBUTING.md)
+![made with go](https://img.shields.io/badge/made%20with-Go-1E90FF.svg) [![go reference](https://pkg.go.dev/badge/github.com/hueristiq/hq-lib-limiter-go.svg)](https://pkg.go.dev/github.com/hueristiq/hq-lib-limiter-go) [![license](https://img.shields.io/badge/license-MIT-gray.svg?color=1E90FF)](https://github.com/hueristiq/hq-lib-limiter-go/blob/main/LICENSE) ![maintenance](https://img.shields.io/badge/maintained%3F-yes-1E90FF.svg) [![open issues](https://img.shields.io/github/issues-raw/hueristiq/hq-lib-limiter-go.svg?style=flat&color=1E90FF)](https://github.com/hueristiq/hq-lib-limiter-go/issues?q=is:issue+is:open) [![closed issues](https://img.shields.io/github/issues-closed-raw/hueristiq/hq-lib-limiter-go.svg?style=flat&color=1E90FF)](https://github.com/hueristiq/hq-lib-limiter-go/issues?q=is:issue+is:closed) [![contribution](https://img.shields.io/badge/contributions-welcome-1E90FF.svg)](https://github.com/hueristiq/hq-lib-limiter-go/blob/main/CONTRIBUTING.md)
 
-`hq-go-limiter` is a [Go](https://golang.org/) package for throttling outgoing work to one or more rate limits, such as "5 operations per second" or "100 requests per minute".
+`hq-lib-limiter-go` is a [Go](https://golang.org/) package for throttling outgoing work to one or more rate limits, such as "5 operations per second" or "100 requests per minute".
 
 ## Resources
 
@@ -29,10 +29,10 @@
 
 ## Installation
 
-To install `hq-go-limiter`, run the following command in your Go project:
+To install `hq-lib-limiter-go`, run the following command in your Go project:
 
 ```bash
-go get -v -u github.com/hueristiq/hq-go-limiter
+go get -v -u github.com/hueristiq/hq-lib-limiter-go
 ```
 
 ## Usage
@@ -40,7 +40,7 @@ go get -v -u github.com/hueristiq/hq-go-limiter
 The examples below import the package under the `hqgolimiter` alias.
 
 ```go
-import hqgolimiter "github.com/hueristiq/hq-go-limiter"
+import hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
 ```
 
 ### Wait
@@ -55,7 +55,7 @@ import (
 	"fmt"
 	"time"
 
-	hqgolimiter "github.com/hueristiq/hq-go-limiter"
+	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
 )
 
 func main() {
@@ -90,7 +90,7 @@ package main
 import (
 	"fmt"
 
-	hqgolimiter "github.com/hueristiq/hq-go-limiter"
+	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
 )
 
 func main() {
@@ -120,7 +120,7 @@ import (
 	"fmt"
 	"time"
 
-	hqgolimiter "github.com/hueristiq/hq-go-limiter"
+	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
 )
 
 func main() {
@@ -146,7 +146,7 @@ import (
 	"fmt"
 	"time"
 
-	hqgolimiter "github.com/hueristiq/hq-go-limiter"
+	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
 )
 
 func main() {
@@ -185,12 +185,12 @@ Every bucket starts full, so the first burst of operations proceeds immediately.
 
 ## Contributing
 
-Contributions are welcome and encouraged! Feel free to submit [Pull Requests](https://github.com/hueristiq/hq-go-limiter/pulls) or report [Issues](https://github.com/hueristiq/hq-go-limiter/issues). For more details, check out the [contribution guidelines](https://github.com/hueristiq/hq-go-limiter/blob/main/CONTRIBUTING.md).
+Contributions are welcome and encouraged! Feel free to submit [Pull Requests](https://github.com/hueristiq/hq-lib-limiter-go/pulls) or report [Issues](https://github.com/hueristiq/hq-lib-limiter-go/issues). For more details, check out the [contribution guidelines](https://github.com/hueristiq/hq-lib-limiter-go/blob/main/CONTRIBUTING.md).
 
-A big thank you to all the [contributors](https://github.com/hueristiq/hq-go-limiter/graphs/contributors) for your ongoing support!
+A big thank you to all the [contributors](https://github.com/hueristiq/hq-lib-limiter-go/graphs/contributors) for your ongoing support!
 
-![contributors](https://contrib.rocks/image?repo=hueristiq/hq-go-limiter&max=500)
+![contributors](https://contrib.rocks/image?repo=hueristiq/hq-lib-limiter-go&max=500)
 
 ## Licensing
 
-This package is licensed under the [MIT license](https://opensource.org/license/mit). You are free to use, modify, and distribute it, as long as you follow the terms of the license. You can find the full license text in the repository - [Full MIT license text](https://github.com/hueristiq/hq-go-limiter/blob/main/LICENSE).
+This package is licensed under the [MIT license](https://opensource.org/license/mit). You are free to use, modify, and distribute it, as long as you follow the terms of the license. You can find the full license text in the repository - [Full MIT license text](https://github.com/hueristiq/hq-lib-limiter-go/blob/main/LICENSE).

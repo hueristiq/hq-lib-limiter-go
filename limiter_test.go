@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	hqgolimiter "github.com/hueristiq/hq-go-limiter"
+	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
 )
 
 var errStopRequested = errors.New("stop requested")
