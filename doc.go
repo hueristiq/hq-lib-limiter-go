@@ -26,13 +26,15 @@
 // Unset options fall back to defaults: a single window of [DefaultLimit] operations per
 // [DefaultPer] and a burst of [DefaultBurst]. Invalid values are normalized the same way —
 // a non-positive limit, window duration, or burst falls back to its default — so the
-// limiter always runs with a valid policy.
+// limiter always runs with a valid policy. A zero-value [Limiter] is ready to use and
+// enforces the same default window.
 //
 // # Concurrency
 //
 // A [Limiter] is safe for concurrent use: all state is guarded by a mutex that is held for
 // bookkeeping only, never while sleeping. Waiters queue by reserving future tokens, so
-// concurrent [Limiter.Wait] calls are paced in arrival order without holding the lock.
+// concurrent [Limiter.Wait] calls are paced in mutex-acquisition order without holding the
+// lock.
 //
 // # Errors
 //
