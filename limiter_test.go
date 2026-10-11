@@ -219,8 +219,9 @@ func TestLimiter_Wait_Paced(t *testing.T) {
 		require.NoError(t, err, "Expected every queued wait to acquire its token")
 	}
 
-	// Queued reservations mature one refill interval apart, so the last of three
-	// waits cannot complete before two intervals have passed.
+	// The Allow above drained the burst, so each of the three waits reserves one refill
+	// interval ahead of the last: the final reservation matures after two intervals, and
+	// the third wait cannot complete before that.
 	assert.GreaterOrEqual(t, time.Since(start), 40*time.Millisecond, "Expected queued waits to be paced")
 }
 
@@ -316,6 +317,54 @@ func TestLimiter_Wait_ContextCancellation(t *testing.T) {
 		err := <-errs
 
 		require.ErrorIs(t, err, errStopRequested, "Expected the context's custom cause")
+		assert.ErrorContains(t, err, "limiter.Wait", "Expected the producing function's name")
+	})
+}
+
+func TestLimiter_ZeroValue(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Allow rate-limits at the default window", func(t *testing.T) {
+		t.Parallel()
+
+		var l hqgolimiter.Limiter
+
+		assert.True(t, l.Allow(), "Expected the zero value's first call to consume the burst token")
+		assert.False(t, l.Allow(), "Expected the zero value's second call to be denied within the default window")
+	})
+
+	t.Run("Take probes without consuming", func(t *testing.T) {
+		t.Parallel()
+
+		var l hqgolimiter.Limiter
+
+		allowed, delay := l.Take()
+		assert.True(t, allowed, "Expected availability on a fresh zero-value limiter")
+		assert.Zero(t, delay, "Expected no wait on a fresh zero-value limiter")
+
+		allowed, delay = l.Take()
+		assert.True(t, allowed, "Expected Take to probe without consuming")
+		assert.Zero(t, delay, "Expected no wait while the burst token remains")
+
+		require.True(t, l.Allow(), "Expected the burst token to be consumable")
+
+		allowed, delay = l.Take()
+		assert.False(t, allowed, "Expected denial once the burst is spent")
+		assert.Positive(t, delay, "Expected a positive wait until the default window refills")
+		assert.LessOrEqual(t, delay, hqgolimiter.DefaultPer, "Expected the wait to stay within one refill")
+	})
+
+	t.Run("Wait reports an already canceled context", func(t *testing.T) {
+		t.Parallel()
+
+		var l hqgolimiter.Limiter
+
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		err := l.Wait(ctx)
+
+		require.ErrorIs(t, err, context.Canceled, "Expected the context's cancellation")
 		assert.ErrorContains(t, err, "limiter.Wait", "Expected the producing function's name")
 	})
 }

@@ -23,7 +23,8 @@
 - **Token-Bucket Core:** One lazily refilled token bucket per window — no background goroutines or tickers.
 - **Burst Control:** `WithBurst` caps how many operations may fire at once before pacing applies.
 - **Three Acquisition Styles:** Non-blocking `Allow`, probing `Take` (reports how long a caller would wait), and blocking, context-aware `Wait`.
-- **Fair Queuing:** `Wait` reserves tokens ahead of time, so concurrent waiters are paced in arrival order; a wait canceled before its reservation matures refunds it.
+- **Fair Queuing:** `Wait` reserves tokens ahead of time, so concurrent waiters are paced in mutex-acquisition order; a wait canceled before its reservation matures refunds it.
+- **Zero Value Ready:** A zero-value `Limiter` enforces the default window (`60` per minute) — no constructor required for the default policy.
 - **Concurrency-Safe:** A mutex guards the bookkeeping — it is never held while sleeping.
 - **Standard Library Only:** No third-party runtime dependencies.
 
@@ -182,6 +183,8 @@ Behavior is set through functional options passed to `New`. Any option left unse
 | `WithBurst(n)` | `DefaultBurst` (`1`) | Caps how many operations may fire at once; each window's token capacity is `min(n, window limit)`. A burst of `1` paces operations evenly. Non-positive values fall back to the default. |
 
 Every bucket starts full, so the first burst of operations proceeds immediately. Buckets refill lazily as time passes — there is no background goroutine to stop.
+
+A zero-value `Limiter` (`var l hqgolimiter.Limiter`) is ready to use and enforces the default window, exactly like `New()` with no options.
 
 ## Contributing
 

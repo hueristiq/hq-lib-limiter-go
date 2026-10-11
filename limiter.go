@@ -56,7 +56,8 @@ type options struct {
 //
 // It allows users to customize limiter behavior by setting fields in the options struct,
 // such as the rate windows and the burst size. Multiple options can be combined to create
-// a tailored policy; WithRate is repeatable, adding one window per call.
+// a tailored policy; WithRate is repeatable, adding one window per call. Options can only
+// be created by this package's With* helpers.
 //
 // Parameters:
 //   - opts (*options): A pointer to the options struct to be modified.
@@ -156,6 +157,10 @@ func (b *bucket) advance(now time.Time) {
 // wait returns the time until the token count reaches target, or 0 when the count is
 // already there.
 //
+// The returned duration is clamped at 0, so a bucket ahead of its target (a negative
+// reservation balance with no elapsed time) reports an immediate wait rather than one in
+// the past.
+//
 // Parameters:
 //   - target (float64): The token count to wait for.
 //
@@ -166,7 +171,7 @@ func (b *bucket) wait(target float64) (d time.Duration) {
 		return 0
 	}
 
-	d = time.Duration((target - b.tokens) * float64(b.per) / float64(b.limit))
+	d = max(0, time.Duration((target-b.tokens)*float64(b.per)/float64(b.limit)))
 
 	return
 }
@@ -176,6 +181,9 @@ func (b *bucket) wait(target float64) (d time.Duration) {
 // A Limiter holds one token bucket per configured window; an operation may proceed only
 // when every bucket can spend a token. All methods are safe for concurrent use: the mutex
 // is held for bookkeeping only, never while sleeping.
+//
+// The zero value is a ready-to-use limiter enforcing the default window of DefaultLimit
+// operations per DefaultPer, exactly like New() with no options.
 //
 // Fields:
 //   - mu (sync.Mutex): Guards the buckets' state.
@@ -245,6 +253,35 @@ func New(ofs ...OptionFunc) (l *Limiter) {
 	return
 }
 
+// defaultBuckets returns the limiter's configured buckets, creating and installing the
+// default window's bucket when the limiter has none — the zero value.
+//
+// It must be called with mu held, so installing the default bucket is safe; later calls
+// reuse it, keeping its refill state.
+//
+// Parameters:
+//   - now (time.Time): The current time, used to seed the default bucket's last update.
+//
+// Returns:
+//   - buckets ([]*bucket): The limiter's buckets, never nil.
+func (l *Limiter) defaultBuckets(now time.Time) (buckets []*bucket) {
+	if l.buckets != nil {
+		return l.buckets
+	}
+
+	capacity := float64(min(DefaultBurst, DefaultLimit))
+
+	l.buckets = []*bucket{{
+		limit:    DefaultLimit,
+		per:      DefaultPer,
+		capacity: capacity,
+		tokens:   capacity,
+		last:     now,
+	}}
+
+	return l.buckets
+}
+
 // Allow reports whether an operation may proceed immediately, consuming a token from every
 // window when it can.
 //
@@ -259,9 +296,10 @@ func (l *Limiter) Allow() (allowed bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	buckets := l.defaultBuckets(now)
 	allowed = true
 
-	for _, b := range l.buckets {
+	for _, b := range buckets {
 		b.advance(now)
 
 		if b.tokens < 1 {
@@ -273,7 +311,7 @@ func (l *Limiter) Allow() (allowed bool) {
 		return
 	}
 
-	for _, b := range l.buckets {
+	for _, b := range buckets {
 		b.tokens--
 	}
 
@@ -283,9 +321,9 @@ func (l *Limiter) Allow() (allowed bool) {
 // Take reports whether an operation may proceed immediately, and how long a caller would
 // have to wait when it may not.
 //
-// It is a probe: no tokens are consumed, so an availability it reports may be claimed by
-// another goroutine before the caller acts on it. Pair it with Allow or Wait to actually
-// acquire a token.
+// It is a probe and consumes nothing: no tokens are charged, so an availability it reports
+// may be claimed by another goroutine before the caller acts on it. Pair it with Allow or
+// Wait to actually acquire a token.
 //
 // Returns:
 //   - allowed (bool): true when a token is available in every window.
@@ -296,9 +334,10 @@ func (l *Limiter) Take() (allowed bool, delay time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	buckets := l.defaultBuckets(now)
 	allowed = true
 
-	for _, b := range l.buckets {
+	for _, b := range buckets {
 		b.advance(now)
 
 		if b.tokens >= 1 {
@@ -319,11 +358,11 @@ func (l *Limiter) Take() (allowed bool, delay time.Duration) {
 // a token from every window when it succeeds.
 //
 // The wait is a reservation: the token is booked before sleeping, so concurrent waiters
-// are paced in arrival order and no token can be stolen while sleeping. When the context's
-// deadline falls before the reservation would mature, Wait fails immediately without
-// consuming. A wait canceled before its reservation matures releases the reservation, so
-// canceled waiters do not consume quota; a cancellation racing the reservation's maturity
-// may still consume it.
+// are paced in mutex-acquisition order and no token can be stolen while sleeping. When the
+// context's deadline falls before the reservation would mature, Wait fails immediately
+// without consuming. A wait canceled before its reservation matures releases the
+// reservation, so canceled waiters do not consume quota; a cancellation racing the
+// reservation's maturity may still consume it.
 //
 // Parameters:
 //   - ctx (context.Context): The context controlling the wait. Cancellation or timeout
@@ -385,7 +424,9 @@ func (l *Limiter) Wait(ctx context.Context) (err error) {
 func (l *Limiter) reserve(now time.Time) (matures time.Time) {
 	var delay time.Duration
 
-	for _, b := range l.buckets {
+	buckets := l.defaultBuckets(now)
+
+	for _, b := range buckets {
 		b.advance(now)
 
 		if d := b.wait(1); d > delay {
@@ -393,7 +434,7 @@ func (l *Limiter) reserve(now time.Time) (matures time.Time) {
 		}
 	}
 
-	for _, b := range l.buckets {
+	for _, b := range buckets {
 		b.tokens--
 	}
 
