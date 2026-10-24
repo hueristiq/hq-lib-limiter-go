@@ -61,6 +61,10 @@ type options struct {
 //
 // Parameters:
 //   - opts (*options): A pointer to the options struct to be modified.
+//
+// Returns:
+//
+//	none.
 type OptionFunc func(opts *options)
 
 // WithRate returns an OptionFunc that adds a rate window of limit operations per duration.
@@ -144,6 +148,10 @@ type bucket struct {
 //
 // Parameters:
 //   - now (time.Time): The current time.
+//
+// Returns:
+//
+//	none.
 func (b *bucket) advance(now time.Time) {
 	elapsed := now.Sub(b.last)
 	if elapsed <= 0 {
@@ -288,6 +296,10 @@ func (l *Limiter) defaultBuckets(now time.Time) (buckets []*bucket) {
 // It never blocks and never partially consumes: when any window lacks a token, no window
 // is charged and false is returned.
 //
+// Parameters:
+//
+//	none.
+//
 // Returns:
 //   - allowed (bool): true when a token was available in every window and consumed.
 func (l *Limiter) Allow() (allowed bool) {
@@ -324,6 +336,10 @@ func (l *Limiter) Allow() (allowed bool) {
 // It is a probe and consumes nothing: no tokens are charged, so an availability it reports
 // may be claimed by another goroutine before the caller acts on it. Pair it with Allow or
 // Wait to actually acquire a token.
+//
+// Parameters:
+//
+//	none.
 //
 // Returns:
 //   - allowed (bool): true when a token is available in every window.
@@ -449,6 +465,10 @@ func (l *Limiter) reserve(now time.Time) (matures time.Time) {
 //
 // Parameters:
 //   - matures (time.Time): The moment the reservation matures.
+//
+// Returns:
+//
+//	none.
 func (l *Limiter) unreserve(matures time.Time) {
 	now := time.Now()
 
