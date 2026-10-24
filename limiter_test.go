@@ -1,4 +1,4 @@
-package limiter_test
+package limiter
 
 import (
 	"context"
@@ -10,8 +10,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
 )
 
 var errStopRequested = errors.New("stop requested")
@@ -21,7 +19,7 @@ func TestNew_Configuration(t *testing.T) {
 
 	tests := []struct {
 		name string
-		ofs  []hqgolimiter.OptionFunc
+		ofs  []OptionFunc
 		want []bool
 	}{
 		{
@@ -31,67 +29,67 @@ func TestNew_Configuration(t *testing.T) {
 		},
 		{
 			name: "explicit rate without burst paces evenly",
-			ofs:  []hqgolimiter.OptionFunc{hqgolimiter.WithRate(5, time.Second)},
+			ofs:  []OptionFunc{WithRate(5, time.Second)},
 			want: []bool{true, false},
 		},
 		{
 			name: "zero rate falls back to the default window",
-			ofs:  []hqgolimiter.OptionFunc{hqgolimiter.WithRate(0, 0)},
+			ofs:  []OptionFunc{WithRate(0, 0)},
 			want: []bool{true, false},
 		},
 		{
 			name: "negative rate falls back to the default window",
-			ofs:  []hqgolimiter.OptionFunc{hqgolimiter.WithRate(-5, -time.Second)},
+			ofs:  []OptionFunc{WithRate(-5, -time.Second)},
 			want: []bool{true, false},
 		},
 		{
 			name: "requests per minute sugar",
-			ofs:  []hqgolimiter.OptionFunc{hqgolimiter.WithRequestsPerMinute(120)},
+			ofs:  []OptionFunc{WithRequestsPerMinute(120)},
 			want: []bool{true, false},
 		},
 		{
 			name: "invalid requests per minute falls back to the default window",
-			ofs:  []hqgolimiter.OptionFunc{hqgolimiter.WithRequestsPerMinute(0)},
+			ofs:  []OptionFunc{WithRequestsPerMinute(0)},
 			want: []bool{true, false},
 		},
 		{
 			name: "burst permits a burst then denies",
-			ofs: []hqgolimiter.OptionFunc{
-				hqgolimiter.WithRate(5, time.Second),
-				hqgolimiter.WithBurst(3),
+			ofs: []OptionFunc{
+				WithRate(5, time.Second),
+				WithBurst(3),
 			},
 			want: []bool{true, true, true, false},
 		},
 		{
 			name: "zero burst falls back to the default burst",
-			ofs: []hqgolimiter.OptionFunc{
-				hqgolimiter.WithRate(5, time.Second),
-				hqgolimiter.WithBurst(0),
+			ofs: []OptionFunc{
+				WithRate(5, time.Second),
+				WithBurst(0),
 			},
 			want: []bool{true, false},
 		},
 		{
 			name: "negative burst falls back to the default burst",
-			ofs: []hqgolimiter.OptionFunc{
-				hqgolimiter.WithRate(5, time.Second),
-				hqgolimiter.WithBurst(-2),
+			ofs: []OptionFunc{
+				WithRate(5, time.Second),
+				WithBurst(-2),
 			},
 			want: []bool{true, false},
 		},
 		{
 			name: "burst above the window limit is clamped to it",
-			ofs: []hqgolimiter.OptionFunc{
-				hqgolimiter.WithRate(2, time.Second),
-				hqgolimiter.WithBurst(10),
+			ofs: []OptionFunc{
+				WithRate(2, time.Second),
+				WithBurst(10),
 			},
 			want: []bool{true, true, false},
 		},
 		{
 			name: "repeatable rates enforce every window",
-			ofs: []hqgolimiter.OptionFunc{
-				hqgolimiter.WithRate(3, time.Second),
-				hqgolimiter.WithRate(2, time.Minute),
-				hqgolimiter.WithBurst(5),
+			ofs: []OptionFunc{
+				WithRate(3, time.Second),
+				WithRate(2, time.Minute),
+				WithBurst(5),
 			},
 			want: []bool{true, true, false},
 		},
@@ -101,7 +99,7 @@ func TestNew_Configuration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			l := hqgolimiter.New(tt.ofs...)
+			l := New(tt.ofs...)
 
 			gots := make([]bool, 0, len(tt.want))
 
@@ -117,9 +115,9 @@ func TestNew_Configuration(t *testing.T) {
 func TestLimiter_Allow_Refill(t *testing.T) {
 	t.Parallel()
 
-	l := hqgolimiter.New(
-		hqgolimiter.WithRate(4, 40*time.Millisecond),
-		hqgolimiter.WithBurst(1),
+	l := New(
+		WithRate(4, 40*time.Millisecond),
+		WithBurst(1),
 	)
 
 	assert.True(t, l.Allow(), "Expected the first call to consume the burst token")
@@ -134,9 +132,9 @@ func TestLimiter_Allow_Refill(t *testing.T) {
 func TestLimiter_Take(t *testing.T) {
 	t.Parallel()
 
-	l := hqgolimiter.New(
-		hqgolimiter.WithRate(2, 20*time.Millisecond),
-		hqgolimiter.WithBurst(2),
+	l := New(
+		WithRate(2, 20*time.Millisecond),
+		WithBurst(2),
 	)
 
 	allowed, delay := l.Take()
@@ -166,7 +164,7 @@ func TestLimiter_Take(t *testing.T) {
 func TestLimiter_Wait_Immediate(t *testing.T) {
 	t.Parallel()
 
-	l := hqgolimiter.New(hqgolimiter.WithRequestsPerMinute(60))
+	l := New(WithRequestsPerMinute(60))
 
 	err := l.Wait(t.Context())
 
@@ -176,7 +174,7 @@ func TestLimiter_Wait_Immediate(t *testing.T) {
 func TestLimiter_Wait_Blocks(t *testing.T) {
 	t.Parallel()
 
-	l := hqgolimiter.New(hqgolimiter.WithRate(1, 30*time.Millisecond))
+	l := New(WithRate(1, 30*time.Millisecond))
 
 	require.True(t, l.Allow(), "Expected the burst token to drain the bucket")
 
@@ -192,7 +190,7 @@ func TestLimiter_Wait_Blocks(t *testing.T) {
 func TestLimiter_Wait_Paced(t *testing.T) {
 	t.Parallel()
 
-	l := hqgolimiter.New(hqgolimiter.WithRate(1, 20*time.Millisecond))
+	l := New(WithRate(1, 20*time.Millisecond))
 
 	require.True(t, l.Allow(), "Expected the burst token to drain the bucket")
 
@@ -231,7 +229,7 @@ func TestLimiter_Wait_ContextCancellation(t *testing.T) {
 	t.Run("already canceled context", func(t *testing.T) {
 		t.Parallel()
 
-		l := hqgolimiter.New()
+		l := New()
 
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
@@ -245,9 +243,9 @@ func TestLimiter_Wait_ContextCancellation(t *testing.T) {
 	t.Run("deadline before maturity fails immediately", func(t *testing.T) {
 		t.Parallel()
 
-		l := hqgolimiter.New(
-			hqgolimiter.WithRate(1, time.Hour),
-			hqgolimiter.WithBurst(1),
+		l := New(
+			WithRate(1, time.Hour),
+			WithBurst(1),
 		)
 
 		require.True(t, l.Allow(), "Expected the burst token to drain the bucket")
@@ -267,7 +265,7 @@ func TestLimiter_Wait_ContextCancellation(t *testing.T) {
 	t.Run("canceled while waiting releases the reservation", func(t *testing.T) {
 		t.Parallel()
 
-		l := hqgolimiter.New(hqgolimiter.WithRate(1, 60*time.Millisecond))
+		l := New(WithRate(1, 60*time.Millisecond))
 
 		require.True(t, l.Allow(), "Expected the burst token to drain the bucket")
 
@@ -296,9 +294,9 @@ func TestLimiter_Wait_ContextCancellation(t *testing.T) {
 	t.Run("cancel cause is returned", func(t *testing.T) {
 		t.Parallel()
 
-		l := hqgolimiter.New(
-			hqgolimiter.WithRate(1, time.Hour),
-			hqgolimiter.WithBurst(1),
+		l := New(
+			WithRate(1, time.Hour),
+			WithBurst(1),
 		)
 
 		require.True(t, l.Allow(), "Expected the burst token to drain the bucket")
@@ -327,7 +325,7 @@ func TestLimiter_ZeroValue(t *testing.T) {
 	t.Run("Allow rate-limits at the default window", func(t *testing.T) {
 		t.Parallel()
 
-		var l hqgolimiter.Limiter
+		var l Limiter
 
 		assert.True(t, l.Allow(), "Expected the zero value's first call to consume the burst token")
 		assert.False(t, l.Allow(), "Expected the zero value's second call to be denied within the default window")
@@ -336,7 +334,7 @@ func TestLimiter_ZeroValue(t *testing.T) {
 	t.Run("Take probes without consuming", func(t *testing.T) {
 		t.Parallel()
 
-		var l hqgolimiter.Limiter
+		var l Limiter
 
 		allowed, delay := l.Take()
 		assert.True(t, allowed, "Expected availability on a fresh zero-value limiter")
@@ -351,13 +349,13 @@ func TestLimiter_ZeroValue(t *testing.T) {
 		allowed, delay = l.Take()
 		assert.False(t, allowed, "Expected denial once the burst is spent")
 		assert.Positive(t, delay, "Expected a positive wait until the default window refills")
-		assert.LessOrEqual(t, delay, hqgolimiter.DefaultPer, "Expected the wait to stay within one refill")
+		assert.LessOrEqual(t, delay, DefaultPer, "Expected the wait to stay within one refill")
 	})
 
 	t.Run("Wait reports an already canceled context", func(t *testing.T) {
 		t.Parallel()
 
-		var l hqgolimiter.Limiter
+		var l Limiter
 
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
@@ -372,10 +370,10 @@ func TestLimiter_ZeroValue(t *testing.T) {
 func TestLimiter_MultiRate(t *testing.T) {
 	t.Parallel()
 
-	l := hqgolimiter.New(
-		hqgolimiter.WithRate(2, 50*time.Millisecond),
-		hqgolimiter.WithRate(3, 300*time.Millisecond),
-		hqgolimiter.WithBurst(3),
+	l := New(
+		WithRate(2, 50*time.Millisecond),
+		WithRate(3, 300*time.Millisecond),
+		WithBurst(3),
 	)
 
 	// The 50 ms window caps the burst at its own limit of 2.
@@ -393,9 +391,9 @@ func TestLimiter_MultiRate(t *testing.T) {
 func TestLimiter_Concurrency(t *testing.T) {
 	t.Parallel()
 
-	l := hqgolimiter.New(
-		hqgolimiter.WithRate(100000, time.Second),
-		hqgolimiter.WithBurst(64),
+	l := New(
+		WithRate(100000, time.Second),
+		WithBurst(64),
 	)
 
 	const goroutines = 32
@@ -432,4 +430,55 @@ func TestLimiter_Concurrency(t *testing.T) {
 
 	assert.Positive(t, allowed.Load(), "Expected some calls to consume the burst")
 	assert.Equal(t, int64(goroutines*100), waited.Load(), "Expected every wait to acquire a token")
+}
+
+func TestBucket_WaitClampsNegativeWait(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		bucket bucket
+		target float64
+		want   time.Duration
+	}{
+		{
+			name: "tokens above the target report an immediate wait",
+			bucket: bucket{
+				limit:    1,
+				per:      time.Second,
+				capacity: 1,
+				tokens:   1.5,
+			},
+			target: 1,
+			want:   0,
+		},
+		{
+			name: "tokens below the target report the refill wait",
+			bucket: bucket{
+				limit:    1,
+				per:      500 * time.Millisecond,
+				capacity: 1,
+				tokens:   0,
+			},
+			target: 1,
+			want:   500 * time.Millisecond,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			b := tt.bucket
+
+			assert.Equal(t, tt.want, b.wait(tt.target), "Expected the wait duration")
+		})
+	}
+}
+
+func TestUnreserveMature(t *testing.T) {
+	t.Parallel()
+
+	limiter := New(WithRate(1, time.Second))
+	limiter.unreserve(time.Now().Add(-time.Second))
 }
