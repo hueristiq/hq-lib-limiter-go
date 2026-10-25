@@ -26,7 +26,6 @@
 - **Fair Queuing:** `Wait` reserves tokens ahead of time, so concurrent waiters are paced in mutex-acquisition order; a wait canceled before its reservation matures refunds it.
 - **Zero Value Ready:** A zero-value `Limiter` enforces the default window (`60` per minute) — no constructor required for the default policy.
 - **Concurrency-Safe:** A mutex guards the bookkeeping — it is never held while sleeping.
-- **Standard Library Only:** No third-party runtime dependencies.
 
 ## Installation
 
