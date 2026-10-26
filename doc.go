@@ -33,8 +33,8 @@
 //
 // A [Limiter] is safe for concurrent use: all state is guarded by a mutex that is held for
 // bookkeeping only, never while sleeping. Waiters queue by reserving future tokens, so
-// concurrent [Limiter.Wait] calls are paced in mutex-acquisition order without holding the
-// lock.
+// concurrent [Limiter.Wait] calls are paced in the order reservations are taken under the
+// mutex, without holding it while they sleep.
 //
 // # Errors
 //

@@ -23,7 +23,7 @@
 - **Token-Bucket Core:** One lazily refilled token bucket per window — no background goroutines or tickers.
 - **Burst Control:** `WithBurst` caps how many operations may fire at once before pacing applies.
 - **Three Acquisition Styles:** Non-blocking `Allow`, probing `Take` (reports how long a caller would wait), and blocking, context-aware `Wait`.
-- **Fair Queuing:** `Wait` reserves tokens ahead of time, so concurrent waiters are paced in mutex-acquisition order; a wait canceled before its reservation matures refunds it.
+- **Fair Queuing:** `Wait` reserves tokens ahead of time, so concurrent waiters are paced in the order reservations are taken; a wait canceled before its reservation matures refunds it.
 - **Zero Value Ready:** A zero-value `Limiter` enforces the default window (`60` per minute) — no constructor required for the default policy.
 - **Concurrency-Safe:** A mutex guards the bookkeeping — it is never held while sleeping.
 
@@ -32,8 +32,10 @@
 To install `hq-lib-limiter-go`, run the following command in your Go project:
 
 ```bash
-go get -v -u github.com/hueristiq/hq-lib-limiter-go
+go get github.com/hueristiq/hq-lib-limiter-go@latest
 ```
+
+Requires Go 1.26.3 or later.
 
 ## Usage
 
@@ -42,6 +44,8 @@ The examples below import the package under the `hqgolimiter` alias.
 ```go
 import hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
 ```
+
+The snippets below are illustrative.
 
 ### Wait
 
@@ -124,7 +128,12 @@ import (
 )
 
 func main() {
-	l := hqgolimiter.New(hqgolimiter.WithRate(1, 100*time.Millisecond))
+	l := hqgolimiter.New(
+		hqgolimiter.WithRate(1, 100*time.Millisecond),
+		hqgolimiter.WithBurst(1),
+	)
+
+	l.Allow() // consume the initial token
 
 	if allowed, delay := l.Take(); allowed {
 		fmt.Println("A request may proceed right now")
@@ -173,7 +182,7 @@ func main() {
 
 ## Configuration
 
-Behavior is set through functional options passed to `New`. Any option left unset falls back to its default.
+Behavior is set through functional options passed to `New`. Any option left unset falls back to its default. The `With*` helpers cover the common cases; because the option receives the exported `Options` type, callers can also write custom `OptionFunc`s.
 
 | Option | Default | Description |
 | --- | --- | --- |
