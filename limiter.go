@@ -51,12 +51,43 @@ type OptionFunc func(opts *Options)
 //   - capacity (float64): maximum number of tokens the bucket holds.
 //   - tokens (float64): current token count; negative while reservations are queued.
 //   - last (time.Time): time of the last advance.
+//   - refillPerSecond (float64): tokens gained per second, precomputed so advance
+//     avoids per-call division.
+//   - secondsPerToken (float64): seconds per token, precomputed so wait avoids
+//     per-call division.
 type bucket struct {
-	limit    int
-	per      time.Duration
-	capacity float64
-	tokens   float64
-	last     time.Time
+	limit           int
+	per             time.Duration
+	capacity        float64
+	tokens          float64
+	last            time.Time
+	refillPerSecond float64
+	secondsPerToken float64
+}
+
+// newBucket builds a bucket for one rate window, starting full. The refill
+// constants are precomputed once so the hot paths avoid float division.
+//
+// Parameters:
+//   - limit (int): tokens refilled per window.
+//   - per (time.Duration): window duration.
+//   - capacity (float64): maximum number of tokens the bucket holds.
+//   - now (time.Time): time of the bucket's last update.
+//
+// Returns:
+//   - b (*bucket): the new bucket.
+func newBucket(limit int, per time.Duration, capacity float64, now time.Time) (b *bucket) {
+	b = &bucket{
+		limit:           limit,
+		per:             per,
+		capacity:        capacity,
+		tokens:          capacity,
+		last:            now,
+		refillPerSecond: float64(limit) / per.Seconds(),
+		secondsPerToken: per.Seconds() / float64(limit),
+	}
+
+	return
 }
 
 // advance folds elapsed time into the token count, clamping at capacity.
@@ -69,7 +100,7 @@ func (b *bucket) advance(now time.Time) {
 		return
 	}
 
-	b.tokens = min(b.capacity, b.tokens+float64(elapsed)*float64(b.limit)/float64(b.per))
+	b.tokens = min(b.capacity, b.tokens+elapsed.Seconds()*b.refillPerSecond)
 	b.last = now
 }
 
@@ -86,7 +117,7 @@ func (b *bucket) wait(target float64) (d time.Duration) {
 		return 0
 	}
 
-	d = max(0, time.Duration((target-b.tokens)*float64(b.per)/float64(b.limit)))
+	d = max(0, time.Duration((target-b.tokens)*b.secondsPerToken*float64(time.Second)))
 
 	return
 }
@@ -127,13 +158,7 @@ func (l *Limiter) defaultBuckets(now time.Time) (buckets []*bucket) {
 
 	capacity := float64(min(DefaultBurst, DefaultLimit))
 
-	l.buckets = []*bucket{{
-		limit:    DefaultLimit,
-		per:      DefaultPer,
-		capacity: capacity,
-		tokens:   capacity,
-		last:     now,
-	}}
+	l.buckets = []*bucket{newBucket(DefaultLimit, DefaultPer, capacity, now)}
 
 	return l.buckets
 }
@@ -174,8 +199,8 @@ func (l *Limiter) Allow() (allowed bool) {
 	return
 }
 
-// Take reports whether an operation may proceed immediately, and how long a caller would
-// have to wait when it may not.
+// Inspect reports whether an operation may proceed immediately, and how long a
+// caller would have to wait when it may not.
 //
 // It is a probe and consumes nothing: no tokens are charged, so an availability it reports
 // may be claimed by another goroutine before the caller acts on it. Pair it with Allow or
@@ -184,7 +209,7 @@ func (l *Limiter) Allow() (allowed bool) {
 // Returns:
 //   - allowed (bool): true when a token is available in every window.
 //   - delay (time.Duration): the wait until every window holds a token, 0 when allowed.
-func (l *Limiter) Take() (allowed bool, delay time.Duration) {
+func (l *Limiter) Inspect() (allowed bool, delay time.Duration) {
 	now := time.Now()
 
 	l.mu.Lock()
@@ -399,14 +424,23 @@ func New(ofs ...OptionFunc) (l *Limiter) {
 
 		capacity := float64(min(opts.Burst, r.Limit))
 
-		l.buckets = append(l.buckets, &bucket{
-			limit:    r.Limit,
-			per:      r.Per,
-			capacity: capacity,
-			tokens:   capacity,
-			last:     now,
-		})
+		l.buckets = append(l.buckets, newBucket(r.Limit, r.Per, capacity, now))
 	}
+
+	return
+}
+
+// Every returns a Limiter pacing operations to one per interval: it is sugar
+// for New(WithRate(1, interval), WithBurst(1)).
+//
+// Parameters:
+//   - interval (time.Duration): the minimum spacing between operations. A
+//     non-positive value falls back to [DefaultPer].
+//
+// Returns:
+//   - l (*Limiter): a new Limiter enforcing one operation per interval.
+func Every(interval time.Duration) (l *Limiter) {
+	l = New(WithRate(1, interval), WithBurst(1))
 
 	return
 }
@@ -433,10 +467,26 @@ func WithRate(limit int, per time.Duration) (fn OptionFunc) {
 	}
 }
 
+// WithRequestsPer returns an OptionFunc that adds a rate window of n requests
+// per duration.
+//
+// It generalizes [WithRequestsPerMinute] and shares its normalization: a value less
+// than or equal to 0 falls back to DefaultLimit, and a non-positive duration falls back
+// to DefaultPer.
+//
+// Parameters:
+//   - n (int): the number of requests allowed per duration.
+//   - per (time.Duration): the window duration.
+//
+// Returns:
+//   - fn (OptionFunc): a functional option that appends the window to the options.
+func WithRequestsPer(n int, per time.Duration) (fn OptionFunc) {
+	return WithRate(n, per)
+}
+
 // WithRequestsPerMinute returns an OptionFunc that adds a per-minute rate window.
 //
-// It is sugar for WithRate(rpm, time.Minute) and shares its normalization: a value less
-// than or equal to 0 falls back to DefaultLimit.
+// It is sugar for [WithRequestsPer](rpm, time.Minute).
 //
 // Parameters:
 //   - rpm (int): the number of requests allowed per minute.
@@ -444,7 +494,7 @@ func WithRate(limit int, per time.Duration) (fn OptionFunc) {
 // Returns:
 //   - fn (OptionFunc): a functional option that appends the window to the options.
 func WithRequestsPerMinute(rpm int) (fn OptionFunc) {
-	return WithRate(rpm, time.Minute)
+	return WithRequestsPer(rpm, time.Minute)
 }
 
 // WithBurst returns an OptionFunc that sets the maximum number of operations that may fire

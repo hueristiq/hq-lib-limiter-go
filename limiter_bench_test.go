@@ -17,7 +17,7 @@ var (
 	sinkAtomic  atomic.Bool
 )
 
-// BenchmarkLimiter measures [hqgolimiter.Limiter.Allow] and [hqgolimiter.Limiter.Take] on a
+// BenchmarkLimiter measures [hqgolimiter.Limiter.Allow] and [hqgolimiter.Limiter.Inspect] on a
 // limiter with an effectively unlimited rate, so every call exercises the bookkeeping fast
 // path — serially, and under parallel contention where the mutex is genuinely shared.
 func BenchmarkLimiter(b *testing.B) {
@@ -29,16 +29,16 @@ func BenchmarkLimiter(b *testing.B) {
 	b.Run("Allow", func(b *testing.B) {
 		b.ReportAllocs()
 
-		for b.Loop() {
+		for range b.N {
 			sinkAllowed = l.Allow()
 		}
 	})
 
-	b.Run("Take", func(b *testing.B) {
+	b.Run("Inspect", func(b *testing.B) {
 		b.ReportAllocs()
 
-		for b.Loop() {
-			sinkAllowed, sinkDelay = l.Take()
+		for range b.N {
+			sinkAllowed, sinkDelay = l.Inspect()
 		}
 	})
 
@@ -54,12 +54,12 @@ func BenchmarkLimiter(b *testing.B) {
 		})
 	})
 
-	b.Run("TakeContended", func(b *testing.B) {
+	b.Run("InspectContended", func(b *testing.B) {
 		b.ReportAllocs()
 
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				if _, delay := l.Take(); delay < 0 {
+				if _, delay := l.Inspect(); delay < 0 {
 					sinkAtomic.Store(true)
 				}
 			}

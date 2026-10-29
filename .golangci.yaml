@@ -112,6 +112,10 @@ linters:
         goconst:
             min-len: 2
             min-occurrences: 3
+        importas:
+            alias:
+                - pkg: github.com/hueristiq/hq-lib-limiter-go
+                  alias: hqgolimiter
         gocritic:
             enabled-tags:
                 - performance

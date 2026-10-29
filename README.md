@@ -4,16 +4,16 @@
 
 `hq-lib-limiter-go` is a [Go](https://golang.org/) package for throttling outgoing work to one or more rate limits.
 
-## Resources
+## Table of Contents
 
 - [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
 	- [Wait](#wait)
 	- [Allow](#allow)
-	- [Take](#take)
+	- [Inspect](#inspect)
+	- [Every](#every)
 	- [Multiple Rate Windows](#multiple-rate-windows)
-- [Configuration](#configuration)
 - [Contributing](#contributing)
 - [Licensing](#licensing)
 
@@ -22,66 +22,48 @@
 - **Multiple Rate Windows:** `WithRate` is repeatable; every window is enforced simultaneously, so "5 per second _and_ 100 per minute" just works.
 - **Token-Bucket Core:** One lazily refilled token bucket per window — no background goroutines or tickers.
 - **Burst Control:** `WithBurst` caps how many operations may fire at once before pacing applies.
-- **Three Acquisition Styles:** Non-blocking `Allow`, probing `Take` (reports how long a caller would wait), and blocking, context-aware `Wait`.
+- **Three Acquisition Styles:** Non-blocking `Allow`, probing `Inspect` (reports how long a caller would wait), and blocking, context-aware `Wait`.
 - **Fair Queuing:** `Wait` reserves tokens ahead of time, so concurrent waiters are paced in the order reservations are taken; a wait canceled before its reservation matures refunds it.
 - **Zero Value Ready:** A zero-value `Limiter` enforces the default window (`60` per minute) — no constructor required for the default policy.
 - **Concurrency-Safe:** A mutex guards the bookkeeping — it is never held while sleeping.
 
 ## Installation
 
-To install `hq-lib-limiter-go`, run the following command in your Go project:
-
 ```bash
 go get github.com/hueristiq/hq-lib-limiter-go@latest
 ```
 
-Requires Go 1.26.3 or later.
+Requires Go 1.23 or later.
 
 ## Usage
 
-The examples below import the package under the `hqgolimiter` alias.
+The examples import the package under the `hqgolimiter` alias:
 
 ```go
 import hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
 ```
-
-The snippets below are illustrative.
 
 ### Wait
 
 Use `Wait` to block until an operation may proceed, observing context cancellation and deadlines:
 
 ```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"time"
-
-	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
+l := hqgolimiter.New(
+	hqgolimiter.WithRate(5, time.Second),
+	hqgolimiter.WithBurst(2),
 )
 
-func main() {
-	l := hqgolimiter.New(
-		hqgolimiter.WithRate(5, time.Second),
-		hqgolimiter.WithBurst(2),
-	)
+ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
 
-	defer cancel()
+if err := l.Wait(ctx); err != nil {
+	fmt.Printf("Stopped waiting: %v\n", err)
 
-	for i := 1; i <= 6; i++ {
-		if err := l.Wait(ctx); err != nil {
-			fmt.Printf("Stopped waiting: %v\n", err)
-
-			break
-		}
-
-		fmt.Printf("Request %d made at %s\n", i, time.Now().Format(time.TimeOnly))
-	}
+	return
 }
+
+fmt.Println("Request made")
 ```
 
 ### Allow
@@ -89,58 +71,46 @@ func main() {
 Use `Allow` when an operation should be skipped rather than queued:
 
 ```go
-package main
-
-import (
-	"fmt"
-
-	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
+l := hqgolimiter.New(
+	hqgolimiter.WithRequestsPerMinute(60),
+	hqgolimiter.WithBurst(5),
 )
 
-func main() {
-	l := hqgolimiter.New(
-		hqgolimiter.WithRequestsPerMinute(60),
-		hqgolimiter.WithBurst(5),
-	)
-
-	for i := 1; i <= 6; i++ {
-		if l.Allow() {
-			fmt.Printf("Request %d sent\n", i)
-		} else {
-			fmt.Printf("Request %d skipped: rate limited\n", i)
-		}
-	}
+if l.Allow() {
+	fmt.Println("Request sent")
+} else {
+	fmt.Println("Request skipped: rate limited")
 }
 ```
 
-### Take
+### Inspect
 
-Use `Take` to probe availability — it reports whether an operation may proceed and how long a caller would otherwise wait, without consuming anything:
+Use `Inspect` to probe availability — it reports whether an operation may proceed and how long a caller would otherwise wait, without consuming anything:
 
 ```go
-package main
-
-import (
-	"fmt"
-	"time"
-
-	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
+l := hqgolimiter.New(
+	hqgolimiter.WithRate(1, 100*time.Millisecond),
+	hqgolimiter.WithBurst(1),
 )
 
-func main() {
-	l := hqgolimiter.New(
-		hqgolimiter.WithRate(1, 100*time.Millisecond),
-		hqgolimiter.WithBurst(1),
-	)
+l.Allow() // consume the initial token
 
-	l.Allow() // consume the initial token
-
-	if allowed, delay := l.Take(); allowed {
-		fmt.Println("A request may proceed right now")
-	} else {
-		fmt.Printf("Rate limited; a caller would wait %v\n", delay)
-	}
+if allowed, delay := l.Inspect(); allowed {
+	fmt.Println("A request may proceed right now")
+} else {
+	fmt.Printf("Rate limited; a caller would wait %v\n", delay)
 }
+```
+
+### Every
+
+Use `Every` for the common "one operation per interval" pacer — it is sugar for `New(WithRate(1, interval), WithBurst(1))`:
+
+```go
+l := hqgolimiter.Every(100 * time.Millisecond)
+
+l.Wait(context.Background()) // immediate
+l.Wait(context.Background()) // waits until the interval has passed
 ```
 
 ### Multiple Rate Windows
@@ -148,57 +118,19 @@ func main() {
 Supply `WithRate` repeatedly to enforce several windows simultaneously — an operation proceeds only when every window permits it:
 
 ```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"time"
-
-	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
+// At most 5 requests per second and 100 requests per minute.
+l := hqgolimiter.New(
+	hqgolimiter.WithRate(5, time.Second),
+	hqgolimiter.WithRate(100, time.Minute),
+	hqgolimiter.WithBurst(5),
 )
-
-func main() {
-	// At most 5 requests per second and 100 requests per minute.
-	l := hqgolimiter.New(
-		hqgolimiter.WithRate(5, time.Second),
-		hqgolimiter.WithRate(100, time.Minute),
-		hqgolimiter.WithBurst(5),
-	)
-
-	ctx := context.Background()
-
-	for i := 1; i <= 10; i++ {
-		if err := l.Wait(ctx); err != nil {
-			fmt.Printf("Stopped waiting: %v\n", err)
-
-			break
-		}
-
-		fmt.Printf("Request %d made\n", i)
-	}
-}
 ```
-
-## Configuration
-
-Behavior is set through functional options passed to `New`. Any option left unset falls back to its default. The `With*` helpers cover the common cases; because the option receives the exported `Options` type, callers can also write custom `OptionFunc`s.
-
-| Option | Default | Description |
-| --- | --- | --- |
-| `WithRate(limit, per)` | `DefaultLimit` per `DefaultPer` (`60` per minute) when no window is supplied | Adds a rate window of `limit` operations per `per`. Repeatable — every supplied window is enforced simultaneously. A non-positive `limit` or `per` falls back to its default. |
-| `WithRequestsPerMinute(rpm)` | `DefaultLimit` (`60`) for non-positive values | Sugar for `WithRate(rpm, time.Minute)`. |
-| `WithBurst(n)` | `DefaultBurst` (`1`) | Caps how many operations may fire at once; each window's token capacity is `min(n, window limit)`. A burst of `1` paces operations evenly. Non-positive values fall back to the default. |
-
-Every bucket starts full, so the first burst of operations proceeds immediately. Buckets refill lazily as time passes — there is no background goroutine to stop.
-
-A zero-value `Limiter` (`var l hqgolimiter.Limiter`) is ready to use and enforces the default window, exactly like `New()` with no options.
 
 ## Contributing
 
 Contributions are welcome and encouraged! Feel free to submit [Pull Requests](https://github.com/hueristiq/hq-lib-limiter-go/pulls) or report [Issues](https://github.com/hueristiq/hq-lib-limiter-go/issues). For more details, check out the [contribution guidelines](https://github.com/hueristiq/hq-lib-limiter-go/blob/main/CONTRIBUTING.md).
 
-A big thank you to all the [contributors](https://github.com/hueristiq/hq-lib-limiter-go/graphs/contributors) for your ongoing support!
+A big thank you to all the [contributors](https://github.com/hueristiq/hq-lib-limiter-go/graphs/contributors) for their ongoing support!
 
 ![contributors](https://contrib.rocks/image?repo=hueristiq/hq-lib-limiter-go&max=500)
 
