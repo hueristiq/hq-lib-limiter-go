@@ -3,6 +3,7 @@ package limiter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -50,6 +51,11 @@ func TestNew_Configuration(t *testing.T) {
 		{
 			name: "invalid requests per minute falls back to the default window",
 			ofs:  []OptionFunc{WithRequestsPerMinute(0)},
+			want: []bool{true, false},
+		},
+		{
+			name: "requests per is equivalent to a rate window",
+			ofs:  []OptionFunc{WithRequestsPer(5, time.Second)},
 			want: []bool{true, false},
 		},
 		{
@@ -112,6 +118,19 @@ func TestNew_Configuration(t *testing.T) {
 	}
 }
 
+func TestEvery(t *testing.T) {
+	t.Parallel()
+
+	l := Every(40 * time.Millisecond)
+
+	assert.True(t, l.Allow(), "Expected the first operation to proceed")
+	assert.False(t, l.Allow(), "Expected the next operation to be paced")
+
+	time.Sleep(50 * time.Millisecond)
+
+	assert.True(t, l.Allow(), "Expected an operation to proceed after the interval elapsed")
+}
+
 func TestLimiter_Allow_Refill(t *testing.T) {
 	t.Parallel()
 
@@ -129,7 +148,7 @@ func TestLimiter_Allow_Refill(t *testing.T) {
 	assert.False(t, l.Allow(), "Expected denial again once the refilled token is spent")
 }
 
-func TestLimiter_Take(t *testing.T) {
+func TestLimiter_Inspect(t *testing.T) {
 	t.Parallel()
 
 	l := New(
@@ -137,26 +156,26 @@ func TestLimiter_Take(t *testing.T) {
 		WithBurst(2),
 	)
 
-	allowed, delay := l.Take()
+	allowed, delay := l.Inspect()
 	assert.True(t, allowed, "Expected availability on a fresh limiter")
 	assert.Zero(t, delay, "Expected no wait on a fresh limiter")
 
-	allowed, delay = l.Take()
-	assert.True(t, allowed, "Expected Take to probe without consuming")
+	allowed, delay = l.Inspect()
+	assert.True(t, allowed, "Expected Inspect to probe without consuming")
 	assert.Zero(t, delay, "Expected no wait while tokens remain")
 
 	require.True(t, l.Allow(), "Expected the burst to be consumable")
 	require.True(t, l.Allow(), "Expected the burst to be consumable")
 	require.False(t, l.Allow(), "Expected denial once the burst is spent")
 
-	allowed, delay = l.Take()
+	allowed, delay = l.Inspect()
 	assert.False(t, allowed, "Expected no availability once the burst is spent")
 	assert.Positive(t, delay, "Expected a positive wait once the burst is spent")
 	assert.LessOrEqual(t, delay, 20*time.Millisecond, "Expected the wait to stay within one refill")
 
 	time.Sleep(delay + 20*time.Millisecond)
 
-	allowed, delay = l.Take()
+	allowed, delay = l.Inspect()
 	assert.True(t, allowed, "Expected availability after the reported wait elapsed")
 	assert.Zero(t, delay, "Expected no wait after the reported wait elapsed")
 }
@@ -166,7 +185,7 @@ func TestLimiter_Wait_Immediate(t *testing.T) {
 
 	l := New(WithRequestsPerMinute(60))
 
-	err := l.Wait(t.Context())
+	err := l.Wait(context.Background())
 
 	require.NoError(t, err, "Expected an immediate token on a fresh limiter")
 }
@@ -180,7 +199,7 @@ func TestLimiter_Wait_Blocks(t *testing.T) {
 
 	start := time.Now()
 
-	err := l.Wait(t.Context())
+	err := l.Wait(context.Background())
 	elapsed := time.Since(start)
 
 	require.NoError(t, err, "Expected the wait to acquire the refilled token")
@@ -206,7 +225,7 @@ func TestLimiter_Wait_Paced(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			errs <- l.Wait(t.Context())
+			errs <- l.Wait(context.Background())
 		}()
 	}
 
@@ -231,7 +250,7 @@ func TestLimiter_Wait_ContextCancellation(t *testing.T) {
 
 		l := New()
 
-		ctx, cancel := context.WithCancel(t.Context())
+		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
 		err := l.Wait(ctx)
@@ -250,7 +269,7 @@ func TestLimiter_Wait_ContextCancellation(t *testing.T) {
 
 		require.True(t, l.Allow(), "Expected the burst token to drain the bucket")
 
-		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 		defer cancel()
 
 		start := time.Now()
@@ -269,7 +288,7 @@ func TestLimiter_Wait_ContextCancellation(t *testing.T) {
 
 		require.True(t, l.Allow(), "Expected the burst token to drain the bucket")
 
-		ctx, cancel := context.WithCancel(t.Context())
+		ctx, cancel := context.WithCancel(context.Background())
 
 		errs := make(chan error, 1)
 
@@ -301,7 +320,7 @@ func TestLimiter_Wait_ContextCancellation(t *testing.T) {
 
 		require.True(t, l.Allow(), "Expected the burst token to drain the bucket")
 
-		ctx, cancel := context.WithCancelCause(t.Context())
+		ctx, cancel := context.WithCancelCause(context.Background())
 
 		errs := make(chan error, 1)
 
@@ -331,22 +350,22 @@ func TestLimiter_ZeroValue(t *testing.T) {
 		assert.False(t, l.Allow(), "Expected the zero value's second call to be denied within the default window")
 	})
 
-	t.Run("Take probes without consuming", func(t *testing.T) {
+	t.Run("Inspect probes without consuming", func(t *testing.T) {
 		t.Parallel()
 
 		var l Limiter
 
-		allowed, delay := l.Take()
+		allowed, delay := l.Inspect()
 		assert.True(t, allowed, "Expected availability on a fresh zero-value limiter")
 		assert.Zero(t, delay, "Expected no wait on a fresh zero-value limiter")
 
-		allowed, delay = l.Take()
-		assert.True(t, allowed, "Expected Take to probe without consuming")
+		allowed, delay = l.Inspect()
+		assert.True(t, allowed, "Expected Inspect to probe without consuming")
 		assert.Zero(t, delay, "Expected no wait while the burst token remains")
 
 		require.True(t, l.Allow(), "Expected the burst token to be consumable")
 
-		allowed, delay = l.Take()
+		allowed, delay = l.Inspect()
 		assert.False(t, allowed, "Expected denial once the burst is spent")
 		assert.Positive(t, delay, "Expected a positive wait until the default window refills")
 		assert.LessOrEqual(t, delay, DefaultPer, "Expected the wait to stay within one refill")
@@ -357,7 +376,7 @@ func TestLimiter_ZeroValue(t *testing.T) {
 
 		var l Limiter
 
-		ctx, cancel := context.WithCancel(t.Context())
+		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
 		err := l.Wait(ctx)
@@ -404,7 +423,7 @@ func TestLimiter_Concurrency(t *testing.T) {
 		waited  atomic.Int64
 	)
 
-	ctx := t.Context()
+	ctx := context.Background()
 
 	for range goroutines {
 		wg.Add(1)
@@ -413,7 +432,7 @@ func TestLimiter_Concurrency(t *testing.T) {
 			defer wg.Done()
 
 			for range 100 {
-				_, _ = l.Take()
+				_, _ = l.Inspect()
 
 				if l.Allow() {
 					allowed.Add(1)
@@ -436,32 +455,31 @@ func TestBucket_WaitClampsNegativeWait(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name   string
-		bucket bucket
-		target float64
-		want   time.Duration
+		name     string
+		limit    int
+		per      time.Duration
+		capacity float64
+		tokens   float64
+		target   float64
+		want     time.Duration
 	}{
 		{
-			name: "tokens above the target report an immediate wait",
-			bucket: bucket{
-				limit:    1,
-				per:      time.Second,
-				capacity: 1,
-				tokens:   1.5,
-			},
-			target: 1,
-			want:   0,
+			name:     "tokens above the target report an immediate wait",
+			limit:    1,
+			per:      time.Second,
+			capacity: 1,
+			tokens:   1.5,
+			target:   1,
+			want:     0,
 		},
 		{
-			name: "tokens below the target report the refill wait",
-			bucket: bucket{
-				limit:    1,
-				per:      500 * time.Millisecond,
-				capacity: 1,
-				tokens:   0,
-			},
-			target: 1,
-			want:   500 * time.Millisecond,
+			name:     "tokens below the target report the refill wait",
+			limit:    1,
+			per:      500 * time.Millisecond,
+			capacity: 1,
+			tokens:   0,
+			target:   1,
+			want:     500 * time.Millisecond,
 		},
 	}
 
@@ -469,7 +487,8 @@ func TestBucket_WaitClampsNegativeWait(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			b := tt.bucket
+			b := newBucket(tt.limit, tt.per, tt.capacity, time.Now())
+			b.tokens = tt.tokens
 
 			assert.Equal(t, tt.want, b.wait(tt.target), "Expected the wait duration")
 		})
@@ -481,4 +500,62 @@ func TestUnreserveMature(t *testing.T) {
 
 	limiter := New(WithRate(1, time.Second))
 	limiter.unreserve(time.Now().Add(-time.Second))
+}
+
+// ExampleEvery demonstrates a pacer enforcing one operation per interval.
+func ExampleEvery() {
+	l := Every(time.Second)
+
+	fmt.Println(l.Allow())
+	fmt.Println(l.Allow())
+	// Output:
+	// true
+	// false
+}
+
+// ExampleNew demonstrates a rate window with a burst.
+func ExampleNew() {
+	l := New(WithRate(5, time.Second), WithBurst(2))
+
+	fmt.Println(l.Allow())
+	fmt.Println(l.Allow())
+	fmt.Println(l.Allow())
+	// Output:
+	// true
+	// true
+	// false
+}
+
+// FuzzAllow exercises Allow over arbitrary rate and burst configurations: the
+// number of admitted calls must never exceed the normalized window capacity.
+func FuzzAllow(f *testing.F) {
+	f.Add(5, 2, 10)
+	f.Add(0, 0, 3)
+	f.Add(-7, -1, 8)
+
+	f.Fuzz(func(t *testing.T, limit int, burst int, calls int) {
+		if calls < 0 {
+			calls = -calls
+		}
+
+		calls %= 100
+
+		// An hour-long window makes refill negligible, so the admission count is
+		// exactly min(calls, capacity).
+		l := New(WithRate(limit, time.Hour), WithBurst(burst))
+
+		capacity := int(l.buckets[0].capacity)
+
+		allowed := 0
+
+		for range calls {
+			if l.Allow() {
+				allowed++
+			}
+		}
+
+		if allowed != min(calls, capacity) {
+			t.Fatalf("Expected %d allowed calls out of %d with capacity %d, got %d", min(calls, capacity), calls, capacity, allowed)
+		}
+	})
 }

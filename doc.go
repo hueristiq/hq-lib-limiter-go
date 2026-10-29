@@ -8,9 +8,10 @@
 //
 // # Entry points
 //
-// [New] builds a [Limiter] from functional options. The limiter then offers three ways to
+// [New] builds a [Limiter] from functional options; [Every] returns a limiter
+// pacing operations to one per interval. The limiter then offers three ways to
 // acquire a token: [Limiter.Allow] reports immediately whether an operation may proceed,
-// [Limiter.Take] additionally reports how long a caller would have to wait, and
+// [Limiter.Inspect] additionally reports how long a caller would have to wait, and
 // [Limiter.Wait] blocks until a token is available or the supplied context is done.
 //
 // # Configuration
@@ -20,7 +21,8 @@
 //   - [WithRate] adds a rate window of limit operations per duration. It is repeatable:
 //     every supplied window is enforced simultaneously, and an operation proceeds only when
 //     all windows permit it.
-//   - [WithRequestsPerMinute] is sugar for a per-minute window.
+//   - [WithRequestsPer] adds a window of n requests per duration;
+//     [WithRequestsPerMinute] is sugar for it with a per-minute window.
 //   - [WithBurst] caps how many operations may fire at once before pacing applies.
 //
 // Unset options fall back to defaults: a single window of [DefaultLimit] operations per
