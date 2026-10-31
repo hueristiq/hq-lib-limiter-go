@@ -21,8 +21,6 @@
 //   - [WithRate] adds a rate window of limit operations per duration. It is repeatable:
 //     every supplied window is enforced simultaneously, and an operation proceeds only when
 //     all windows permit it.
-//   - [WithRequestsPer] adds a window of n requests per duration;
-//     [WithRequestsPerMinute] is sugar for it with a per-minute window.
 //   - [WithBurst] caps how many operations may fire at once before pacing applies.
 //
 // Unset options fall back to defaults: a single window of [DefaultLimit] operations per

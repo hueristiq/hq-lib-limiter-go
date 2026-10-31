@@ -44,18 +44,18 @@ func TestNew_Configuration(t *testing.T) {
 			want: []bool{true, false},
 		},
 		{
-			name: "requests per minute sugar",
-			ofs:  []OptionFunc{WithRequestsPerMinute(120)},
+			name: "per-minute rate window",
+			ofs:  []OptionFunc{WithRate(120, time.Minute)},
 			want: []bool{true, false},
 		},
 		{
-			name: "invalid requests per minute falls back to the default window",
-			ofs:  []OptionFunc{WithRequestsPerMinute(0)},
+			name: "invalid limit falls back to the default window",
+			ofs:  []OptionFunc{WithRate(0, time.Minute)},
 			want: []bool{true, false},
 		},
 		{
-			name: "requests per is equivalent to a rate window",
-			ofs:  []OptionFunc{WithRequestsPer(5, time.Second)},
+			name: "rate window with a custom duration",
+			ofs:  []OptionFunc{WithRate(5, time.Second)},
 			want: []bool{true, false},
 		},
 		{
@@ -183,7 +183,7 @@ func TestLimiter_Inspect(t *testing.T) {
 func TestLimiter_Wait_Immediate(t *testing.T) {
 	t.Parallel()
 
-	l := New(WithRequestsPerMinute(60))
+	l := New(WithRate(60, time.Minute))
 
 	err := l.Wait(context.Background())
 

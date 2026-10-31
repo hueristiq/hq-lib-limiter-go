@@ -467,36 +467,6 @@ func WithRate(limit int, per time.Duration) (fn OptionFunc) {
 	}
 }
 
-// WithRequestsPer returns an OptionFunc that adds a rate window of n requests
-// per duration.
-//
-// It generalizes [WithRequestsPerMinute] and shares its normalization: a value less
-// than or equal to 0 falls back to DefaultLimit, and a non-positive duration falls back
-// to DefaultPer.
-//
-// Parameters:
-//   - n (int): the number of requests allowed per duration.
-//   - per (time.Duration): the window duration.
-//
-// Returns:
-//   - fn (OptionFunc): a functional option that appends the window to the options.
-func WithRequestsPer(n int, per time.Duration) (fn OptionFunc) {
-	return WithRate(n, per)
-}
-
-// WithRequestsPerMinute returns an OptionFunc that adds a per-minute rate window.
-//
-// It is sugar for [WithRequestsPer](rpm, time.Minute).
-//
-// Parameters:
-//   - rpm (int): the number of requests allowed per minute.
-//
-// Returns:
-//   - fn (OptionFunc): a functional option that appends the window to the options.
-func WithRequestsPerMinute(rpm int) (fn OptionFunc) {
-	return WithRequestsPer(rpm, time.Minute)
-}
-
 // WithBurst returns an OptionFunc that sets the maximum number of operations that may fire
 // at once.
 //
