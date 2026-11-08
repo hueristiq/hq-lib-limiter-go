@@ -453,7 +453,6 @@ func TestLimiter_Concurrency(t *testing.T) {
 	assert.Equal(t, int64(goroutines*100), waited.Load(), "Expected every wait to acquire a token")
 }
 
-// ExampleEvery demonstrates a pacer enforcing one operation per interval.
 func ExampleEvery() {
 	l := hqgolimiter.Every(time.Second)
 
@@ -464,7 +463,6 @@ func ExampleEvery() {
 	// false
 }
 
-// ExampleNew demonstrates a rate window with a burst.
 func ExampleNew() {
 	l := hqgolimiter.New(hqgolimiter.WithRate(5, time.Second), hqgolimiter.WithBurst(2))
 

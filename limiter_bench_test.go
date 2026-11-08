@@ -9,17 +9,12 @@ import (
 	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
 )
 
-// sinkAllowed and sinkDelay keep serial benchmark results alive; sinkAtomic does the same
-// for contended benchmarks, where a plain variable would be a data race.
 var (
 	sinkAllowed bool
 	sinkDelay   time.Duration
 	sinkAtomic  atomic.Bool
 )
 
-// BenchmarkLimiter measures [hqgolimiter.Limiter.Allow] and [hqgolimiter.Limiter.Inspect] on a
-// limiter with an effectively unlimited rate, so every call exercises the bookkeeping fast
-// path — serially, and under parallel contention where the mutex is genuinely shared.
 func BenchmarkLimiter(b *testing.B) {
 	l := hqgolimiter.New(
 		hqgolimiter.WithRate(math.MaxInt, time.Second),

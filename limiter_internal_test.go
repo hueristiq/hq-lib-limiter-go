@@ -58,8 +58,6 @@ func TestUnreserveMature(t *testing.T) {
 	limiter.unreserve(time.Now().Add(-time.Second))
 }
 
-// FuzzAllow exercises Allow over arbitrary rate and burst configurations: the
-// number of admitted calls must never exceed the normalized window capacity.
 func FuzzAllow(f *testing.F) {
 	f.Add(5, 2, 10)
 	f.Add(0, 0, 3)
