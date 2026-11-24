@@ -17,12 +17,10 @@
 
 ## Features
 
-- **Rate windows and bursts:** `WithRate` is repeatable for multiple windows, and `WithBurst` caps how many operations fire at once.
-- **Token-bucket core:** one lazily refilled bucket per window, with no background goroutines or tickers.
-- **Three acquisition styles:** non-blocking `Allow`, probing `Inspect`, and blocking, context-aware `Wait`.
-- **Fair queuing:** `Wait` reserves tokens in order, and a canceled reservation is refunded.
-- **Zero value ready:** a zero-value `Limiter` enforces the default 60-per-minute window.
-- **Concurrency safe:** a mutex guards bookkeeping and is never held while sleeping.
+- **Rate windows:** `WithRate` adds a window; repeating it enforces several at once.
+- **Acquisition:** non-blocking `Allow`, non-consuming `Reserve`, and context-aware `Wait`.
+- **Reservations:** `Wait` books tokens in order and refunds canceled waits.
+- **Zero value:** a zero-value `Limiter` enforces 60 operations per minute.
 
 ## Installation
 
@@ -71,7 +69,7 @@ func main() {
 		fmt.Println("request skipped: rate limited")
 	}
 
-	if allowed, delay := l.Inspect(); allowed {
+	if allowed, delay := l.Reserve(); allowed {
 		fmt.Println("a request may proceed now")
 	} else {
 		fmt.Printf("a caller would wait %s\n", delay)
@@ -83,7 +81,7 @@ Use `Wait` to block until an operation may proceed. It observes context cancella
 
 Use `Allow` when an operation should be skipped rather than queued. It consumes a token from every window when it can, and never partially consumes.
 
-Use `Inspect` to probe availability without consuming anything. It reports whether an operation may proceed and how long a caller would otherwise wait. Another goroutine may claim the token before you act, so pair `Inspect` with `Allow` or `Wait`.
+Use `Reserve` to probe availability without consuming anything. It reports whether an operation may proceed and how long a caller would otherwise wait. Another goroutine may claim the token before you act, so pair `Reserve` with `Allow` or `Wait`.
 
 ### Every
 
@@ -112,6 +110,18 @@ l := hqgolimiter.New(
 	hqgolimiter.WithRate(100, time.Minute),
 	hqgolimiter.WithBurst(5),
 )
+```
+
+### Zero value
+
+A zero-value `Limiter` is ready to use and enforces the default 60-per-minute window.
+
+```go
+var l hqgolimiter.Limiter
+
+if err := l.Wait(context.Background()); err != nil {
+	log.Fatal(err)
+}
 ```
 
 ## Contributing

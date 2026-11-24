@@ -11,7 +11,7 @@
 // [New] builds a [Limiter] from functional options; [Every] returns a limiter
 // pacing operations to one per interval. The limiter then offers three ways to
 // acquire a token: [Limiter.Allow] reports immediately whether an operation may proceed,
-// [Limiter.Inspect] additionally reports how long a caller would have to wait, and
+// [Limiter.Reserve] additionally reports how long a caller would have to wait, and
 // [Limiter.Wait] blocks until a token is available or the supplied context is done.
 //
 // # Configuration

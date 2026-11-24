@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	hqgoerrors "github.com/hueristiq/hq-lib-errors-go"
 	hqgolimiter "github.com/hueristiq/hq-lib-limiter-go"
 )
 
@@ -150,7 +151,7 @@ func TestLimiter_Allow_Refill(t *testing.T) {
 	assert.False(t, l.Allow(), "Expected denial again once the refilled token is spent")
 }
 
-func TestLimiter_Inspect(t *testing.T) {
+func TestLimiter_Reserve(t *testing.T) {
 	t.Parallel()
 
 	l := hqgolimiter.New(
@@ -158,26 +159,26 @@ func TestLimiter_Inspect(t *testing.T) {
 		hqgolimiter.WithBurst(2),
 	)
 
-	allowed, delay := l.Inspect()
+	allowed, delay := l.Reserve()
 	assert.True(t, allowed, "Expected availability on a fresh limiter")
 	assert.Zero(t, delay, "Expected no wait on a fresh limiter")
 
-	allowed, delay = l.Inspect()
-	assert.True(t, allowed, "Expected Inspect to probe without consuming")
+	allowed, delay = l.Reserve()
+	assert.True(t, allowed, "Expected Reserve to probe without consuming")
 	assert.Zero(t, delay, "Expected no wait while tokens remain")
 
 	require.True(t, l.Allow(), "Expected the burst to be consumable")
 	require.True(t, l.Allow(), "Expected the burst to be consumable")
 	require.False(t, l.Allow(), "Expected denial once the burst is spent")
 
-	allowed, delay = l.Inspect()
+	allowed, delay = l.Reserve()
 	assert.False(t, allowed, "Expected no availability once the burst is spent")
 	assert.Positive(t, delay, "Expected a positive wait once the burst is spent")
 	assert.LessOrEqual(t, delay, 20*time.Millisecond, "Expected the wait to stay within one refill")
 
 	time.Sleep(delay + 20*time.Millisecond)
 
-	allowed, delay = l.Inspect()
+	allowed, delay = l.Reserve()
 	assert.True(t, allowed, "Expected availability after the reported wait elapsed")
 	assert.Zero(t, delay, "Expected no wait after the reported wait elapsed")
 }
@@ -258,7 +259,7 @@ func TestLimiter_Wait_ContextCancellation(t *testing.T) {
 		err := l.Wait(ctx)
 
 		require.ErrorIs(t, err, context.Canceled, "Expected the context's cancellation")
-		assert.ErrorContains(t, err, "limiter.Wait", "Expected the producing function's name")
+		assert.Contains(t, (hqgoerrors.FormatOptions{Trace: true}).String(err), "hq-lib-limiter-go.(*Limiter).Wait", "Expected the producing function's name")
 	})
 
 	t.Run("deadline before maturity fails immediately", func(t *testing.T) {
@@ -336,7 +337,7 @@ func TestLimiter_Wait_ContextCancellation(t *testing.T) {
 		err := <-errs
 
 		require.ErrorIs(t, err, errStopRequested, "Expected the context's custom cause")
-		assert.ErrorContains(t, err, "limiter.Wait", "Expected the producing function's name")
+		assert.Contains(t, (hqgoerrors.FormatOptions{Trace: true}).String(err), "hq-lib-limiter-go.(*Limiter).Wait", "Expected the producing function's name")
 	})
 }
 
@@ -352,22 +353,22 @@ func TestLimiter_ZeroValue(t *testing.T) {
 		assert.False(t, l.Allow(), "Expected the zero value's second call to be denied within the default window")
 	})
 
-	t.Run("Inspect probes without consuming", func(t *testing.T) {
+	t.Run("Reserve probes without consuming", func(t *testing.T) {
 		t.Parallel()
 
 		var l hqgolimiter.Limiter
 
-		allowed, delay := l.Inspect()
+		allowed, delay := l.Reserve()
 		assert.True(t, allowed, "Expected availability on a fresh zero-value limiter")
 		assert.Zero(t, delay, "Expected no wait on a fresh zero-value limiter")
 
-		allowed, delay = l.Inspect()
-		assert.True(t, allowed, "Expected Inspect to probe without consuming")
+		allowed, delay = l.Reserve()
+		assert.True(t, allowed, "Expected Reserve to probe without consuming")
 		assert.Zero(t, delay, "Expected no wait while the burst token remains")
 
 		require.True(t, l.Allow(), "Expected the burst token to be consumable")
 
-		allowed, delay = l.Inspect()
+		allowed, delay = l.Reserve()
 		assert.False(t, allowed, "Expected denial once the burst is spent")
 		assert.Positive(t, delay, "Expected a positive wait until the default window refills")
 		assert.LessOrEqual(t, delay, hqgolimiter.DefaultPer, "Expected the wait to stay within one refill")
@@ -384,7 +385,7 @@ func TestLimiter_ZeroValue(t *testing.T) {
 		err := l.Wait(ctx)
 
 		require.ErrorIs(t, err, context.Canceled, "Expected the context's cancellation")
-		assert.ErrorContains(t, err, "limiter.Wait", "Expected the producing function's name")
+		assert.Contains(t, (hqgoerrors.FormatOptions{Trace: true}).String(err), "hq-lib-limiter-go.(*Limiter).Wait", "Expected the producing function's name")
 	})
 }
 
@@ -434,7 +435,7 @@ func TestLimiter_Concurrency(t *testing.T) {
 			defer wg.Done()
 
 			for range 100 {
-				_, _ = l.Inspect()
+				_, _ = l.Reserve()
 
 				if l.Allow() {
 					allowed.Add(1)

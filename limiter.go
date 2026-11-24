@@ -2,9 +2,10 @@ package limiter
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
+
+	hqgoerrors "github.com/hueristiq/hq-lib-errors-go"
 )
 
 // Rate is a single rate window: at most Limit operations per Per duration,
@@ -33,9 +34,6 @@ type Options struct {
 // Multiple options can be combined; [WithRate] is repeatable, adding one window
 // per call. The With* helpers cover common settings, and callers may write
 // custom options because [Options] is exported.
-//
-// Parameters:
-//   - opts (*Options): the options to modify.
 type OptionFunc func(opts *Options)
 
 // bucket is a token bucket tracking one rate window.
@@ -67,15 +65,6 @@ type bucket struct {
 
 // newBucket builds a bucket for one rate window, starting full. The refill
 // constants are precomputed once so the hot paths avoid float division.
-//
-// Parameters:
-//   - limit (int): tokens refilled per window.
-//   - per (time.Duration): window duration.
-//   - capacity (float64): maximum number of tokens the bucket holds.
-//   - now (time.Time): time of the bucket's last update.
-//
-// Returns:
-//   - b (*bucket): the new bucket.
 func newBucket(limit int, per time.Duration, capacity float64, now time.Time) (b *bucket) {
 	b = &bucket{
 		limit:           limit,
@@ -91,9 +80,6 @@ func newBucket(limit int, per time.Duration, capacity float64, now time.Time) (b
 }
 
 // advance folds elapsed time into the token count, clamping at capacity.
-//
-// Parameters:
-//   - now (time.Time): current time used to compute the elapsed interval.
 func (b *bucket) advance(now time.Time) {
 	elapsed := now.Sub(b.last)
 	if elapsed <= 0 {
@@ -105,13 +91,6 @@ func (b *bucket) advance(now time.Time) {
 }
 
 // wait returns the time until the token count reaches target, clamped at 0.
-//
-// Parameters:
-//   - target (float64): token count to wait for.
-//
-// Returns:
-//   - d (time.Duration): time until the token count reaches target; 0 when it
-//     already has.
 func (b *bucket) wait(target float64) (d time.Duration) {
 	if b.tokens >= target {
 		return 0
@@ -145,12 +124,6 @@ type Limiter struct {
 //
 // It must be called with mu held, so installing the default bucket is safe; later calls
 // reuse it, keeping its refill state.
-//
-// Parameters:
-//   - now (time.Time): the current time, used to seed the default bucket's last update.
-//
-// Returns:
-//   - buckets ([]*bucket): the limiter's buckets, never nil.
 func (l *Limiter) defaultBuckets(now time.Time) (buckets []*bucket) {
 	if l.buckets != nil {
 		return l.buckets
@@ -168,9 +141,6 @@ func (l *Limiter) defaultBuckets(now time.Time) (buckets []*bucket) {
 //
 // It never blocks and never partially consumes: when any window lacks a token, no window
 // is charged and false is returned.
-//
-// Returns:
-//   - allowed (bool): true when a token was available in every window and consumed.
 func (l *Limiter) Allow() (allowed bool) {
 	now := time.Now()
 
@@ -199,17 +169,14 @@ func (l *Limiter) Allow() (allowed bool) {
 	return
 }
 
-// Inspect reports whether an operation may proceed immediately, and how long a
+// Reserve reports whether an operation may proceed immediately, and how long a
 // caller would have to wait when it may not.
 //
 // It is a probe and consumes nothing: no tokens are charged, so an availability it reports
 // may be claimed by another goroutine before the caller acts on it. Pair it with Allow or
-// Wait to actually acquire a token.
-//
-// Returns:
-//   - allowed (bool): true when a token is available in every window.
-//   - delay (time.Duration): the wait until every window holds a token, 0 when allowed.
-func (l *Limiter) Inspect() (allowed bool, delay time.Duration) {
+// Wait to actually acquire a token. Unlike x/time/rate's Reserve, it books
+// no reservation.
+func (l *Limiter) Reserve() (allowed bool, delay time.Duration) {
 	now := time.Now()
 
 	l.mu.Lock()
@@ -246,16 +213,11 @@ func (l *Limiter) Inspect() (allowed bool, delay time.Duration) {
 // reservation, so canceled waiters do not consume quota; a cancellation racing the
 // reservation's maturity may still consume it.
 //
-// Parameters:
-//   - ctx (context.Context): the context controlling the wait. Cancellation or timeout
-//     aborts the wait and returns the context's cause.
-//
-// Returns:
-//   - err (error): nil when a token was acquired, or the context's cause wrapped with the
-//     producing function's name.
+// Cancellation or timeout aborts the wait and returns the context's cause
+// with a stack attached.
 func (l *Limiter) Wait(ctx context.Context) (err error) {
 	if ctx.Err() != nil {
-		err = fmt.Errorf("limiter.Wait: %w", context.Cause(ctx))
+		err = hqgoerrors.Stack(context.Cause(ctx))
 
 		return
 	}
@@ -274,7 +236,7 @@ func (l *Limiter) Wait(ctx context.Context) (err error) {
 	if deadline, ok := ctx.Deadline(); ok && matures.After(deadline) {
 		l.unreserve(matures)
 
-		err = fmt.Errorf("limiter.Wait: %w", context.DeadlineExceeded)
+		err = hqgoerrors.Stack(context.DeadlineExceeded)
 
 		return
 	}
@@ -288,7 +250,7 @@ func (l *Limiter) Wait(ctx context.Context) (err error) {
 	case <-ctx.Done():
 		l.unreserve(matures)
 
-		err = fmt.Errorf("limiter.Wait: %w", context.Cause(ctx))
+		err = hqgoerrors.Stack(context.Cause(ctx))
 	}
 
 	return
@@ -297,13 +259,6 @@ func (l *Limiter) Wait(ctx context.Context) (err error) {
 // reserve books one token in every bucket and returns the moment the reservation matures.
 // Token counts may go negative, representing operations promised to future timestamps;
 // later callers queue behind them.
-//
-// Parameters:
-//   - now (time.Time): the current time.
-//
-// Returns:
-//   - matures (time.Time): the moment every bucket's reservation matures; equal to now when
-//     all buckets had a token immediately available.
 func (l *Limiter) reserve(now time.Time) (matures time.Time) {
 	var delay time.Duration
 
@@ -329,9 +284,6 @@ func (l *Limiter) reserve(now time.Time) (matures time.Time) {
 // unreserve refunds one token to every bucket, releasing a reservation booked by reserve,
 // unless the reservation has already matured — refunding a matured reservation would hand
 // out a free token.
-//
-// Parameters:
-//   - matures (time.Time): the moment the reservation matures.
 func (l *Limiter) unreserve(matures time.Time) {
 	now := time.Now()
 
@@ -381,13 +333,6 @@ const (
 // DefaultBurst, and a limiter configured with no window enforces DefaultLimit operations
 // per DefaultPer. Each window's token capacity is min(burst, window limit), and every
 // bucket starts full, so the first burst of operations proceeds immediately.
-//
-// Parameters:
-//   - ofs (...OptionFunc): Variadic functional options to customize limiter behavior, such
-//     as rate windows and burst size.
-//
-// Returns:
-//   - l (*Limiter): a new Limiter enforcing the configured windows.
 func New(ofs ...OptionFunc) (l *Limiter) {
 	opts := &Options{
 		Burst: DefaultBurst,
@@ -432,13 +377,6 @@ func New(ofs ...OptionFunc) (l *Limiter) {
 
 // Every returns a Limiter pacing operations to one per interval: it is sugar
 // for New(WithRate(1, interval), WithBurst(1)).
-//
-// Parameters:
-//   - interval (time.Duration): the minimum spacing between operations. A
-//     non-positive value falls back to [DefaultPer].
-//
-// Returns:
-//   - l (*Limiter): a new Limiter enforcing one operation per interval.
 func Every(interval time.Duration) (l *Limiter) {
 	l = New(WithRate(1, interval), WithBurst(1))
 
@@ -452,15 +390,6 @@ func Every(interval time.Duration) (l *Limiter) {
 // For example, WithRate(5, time.Second) together with WithRate(100, time.Minute) allows
 // short bursts of 5 operations per second while capping sustained throughput at 100
 // operations per minute.
-//
-// Parameters:
-//   - limit (int): the number of operations allowed per window. Values less than or equal
-//     to 0 fall back to DefaultLimit.
-//   - per (time.Duration): the window duration. Values less than or equal to 0 fall back
-//     to DefaultPer.
-//
-// Returns:
-//   - fn (OptionFunc): a functional option that appends the window to the options.
 func WithRate(limit int, per time.Duration) (fn OptionFunc) {
 	return func(opts *Options) {
 		opts.Rates = append(opts.Rates, Rate{Limit: limit, Per: per})
@@ -473,13 +402,6 @@ func WithRate(limit int, per time.Duration) (fn OptionFunc) {
 // Each window's token capacity is capped at burst (and never exceeds the window's own
 // limit), so a burst of 1 paces operations evenly while a burst equal to a window's limit
 // lets the whole window fire immediately. Unset, the burst falls back to DefaultBurst.
-//
-// Parameters:
-//   - burst (int): the maximum burst size. Values less than or equal to 0 fall back to
-//     DefaultBurst.
-//
-// Returns:
-//   - fn (OptionFunc): a functional option that sets the Burst field in the options.
 func WithBurst(burst int) (fn OptionFunc) {
 	return func(opts *Options) {
 		opts.Burst = burst
